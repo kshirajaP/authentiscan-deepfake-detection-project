@@ -20,6 +20,9 @@ import sys
 import time
 from pathlib import Path
 
+import random
+
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -51,11 +54,33 @@ def build_model(device, unfreeze_last_block=False):
     for param in model.classifier.parameters():
         param.requires_grad = True
 
+    if unfreeze_last_block:
+        n_unfrozen = sum(p.numel() for p in model.base_model.parameters() if p.requires_grad)
+        if n_unfrozen == 0:
+            names = [n for n, _ in model.base_model.named_parameters()][-15:]
+            raise RuntimeError(
+                "--unfreeze_last_block matched no backbone parameters (layer names differ "
+                "in this timm version). Last parameter names are:\n  " + "\n  ".join(names)
+            )
+        print(f"Backbone parameters unfrozen: {n_unfrozen:,}")
+
     return model.to(device)
+
+
+def keep_frozen_batchnorm_in_eval(model):
+    """requires_grad=False does not stop BatchNorm from updating its running
+    statistics in train mode. Put every BatchNorm layer whose parameters are all
+    frozen into eval mode so the frozen backbone really stays frozen."""
+    for m in model.base_model.modules():
+        if isinstance(m, nn.BatchNorm2d):
+            if not any(p.requires_grad for p in m.parameters(recurse=False)):
+                m.eval()
 
 
 def run_epoch(model, loader, criterion, optimizer, device, train=True):
     model.train() if train else model.eval()
+    if train:
+        keep_frozen_batchnorm_in_eval(model)
     total_loss, correct, total = 0.0, 0, 0
 
     torch.set_grad_enabled(train)
@@ -91,6 +116,7 @@ def main():
     parser.add_argument("--output", type=str, default="xception_finetuned.pth")
     args = parser.parse_args()
 
+    random.seed(42); np.random.seed(42); torch.manual_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     if device.type == "cpu":
@@ -137,7 +163,8 @@ def main():
             print(f"  -> new best (val_acc={val_acc:.4f}), saved to {args.output}")
 
     with open("training_log.json", "w") as f:
-        json.dump({"best_val_acc": best_val_acc, "epochs": log}, f, indent=2)
+        json.dump({"settings": vars(args), "n_train": len(train_ds), "n_val": len(val_ds),
+                   "best_val_acc": best_val_acc, "epochs": log}, f, indent=2)
 
     print(f"\nDone. Best val accuracy: {best_val_acc:.4f}")
     print(f"Weights saved to: {args.output}")
