@@ -60,39 +60,45 @@ export default function ResultsDisplay({ result, metadata, c2paData, onReset, jo
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
         {/* Confidence Card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl text-center">
-          <h3 className="font-semibold mb-6 text-slate-300">
-            Detection Confidence
-          </h3>
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 flex items-center justify-between">
 
-          <div className="relative w-48 h-48 mx-auto">
-            <svg className="w-full h-full transform -rotate-90">
-              <circle
-                cx="96"
-                cy="96"
-                r={radius}
-                stroke="#334155"
-                strokeWidth="12"
-                fill="transparent"
-              />
-              <circle
-                cx="96"
-                cy="96"
-                r={radius}
-                stroke={isFake ? "#ef4444" : "#22c55e"}
-                strokeWidth="12"
-                fill="transparent"
-                strokeDasharray={circumference}
-                strokeDashoffset={offset}
-                strokeLinecap="round"
-                className="transition-all duration-700 ease-out"
-              />
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center text-3xl font-bold">
-              {confidence}%
-            </div>
-          </div>
+        <div>
+          <p className="text-sm text-slate-400">Confidence Score</p>
+          <p className="text-4xl font-bold text-white">
+            {confidence}%
+          </p>
         </div>
+
+        <div className="relative w-32 h-32 flex items-center justify-center">
+          <svg width="128" height="128" className="-rotate-90">
+            <circle
+              cx="64"
+              cy="64"
+              r="56"
+              stroke="#334155"
+              strokeWidth="10"
+              fill="none"
+            />
+            <circle
+              cx="64"
+              cy="64"
+              r="56"
+              stroke="#6366f1"
+              strokeWidth="10"
+              fill="none"
+              strokeDasharray={2 * Math.PI * 56}
+              strokeDashoffset={
+                2 * Math.PI * 56 * (1 - result.confidence)
+              }
+              strokeLinecap="round"
+            />
+          </svg>
+          <span className="absolute text-xl font-bold">
+            {confidence}%
+          </span>
+        </div>
+
+      </div>
 
         {/* Metadata */}
         {metadata && (
@@ -148,6 +154,78 @@ export default function ResultsDisplay({ result, metadata, c2paData, onReset, jo
         )}
       </div>
 
+      {result.comparison && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+          <h3 className="text-slate-300 font-semibold mb-4">
+            Ensemble Model Comparison
+          </h3>
+
+          <div className="space-y-4">
+
+            {/* Model 1 */}
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-slate-400">
+                  {result.comparison.model1.name}
+                </span>
+                <span className="font-semibold text-white">
+                  {(result.comparison.model1.confidence * 100).toFixed(1)}%
+                </span>
+              </div>
+              <div className="w-full bg-slate-700 h-2 rounded-full">
+                <div
+                  className="bg-indigo-500 h-2 rounded-full"
+                  style={{
+                    width: `${result.comparison.model1.confidence * 100}%`
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Model 2 */}
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-slate-400">
+                  {result.comparison.model2.name}
+                </span>
+                <span className="font-semibold text-white">
+                  {(result.comparison.model2.confidence * 100).toFixed(1)}%
+                </span>
+              </div>
+              <div className="w-full bg-slate-700 h-2 rounded-full">
+                <div
+                  className="bg-green-500 h-2 rounded-full"
+                  style={{
+                    width: `${result.comparison.model2.confidence * 100}%`
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Ensemble */}
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-slate-400 font-semibold">
+                  Ensemble Output
+                </span>
+                <span className="font-bold text-indigo-400">
+                  {(result.comparison.ensemble.confidence * 100).toFixed(1)}%
+                </span>
+              </div>
+              <div className="w-full bg-slate-700 h-3 rounded-full">
+                <div
+                  className="bg-indigo-600 h-3 rounded-full"
+                  style={{
+                    width: `${result.comparison.ensemble.confidence * 100}%`
+                  }}
+                />
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
       {/* Grad-CAM Section */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
         <h3 className="font-semibold mb-4 text-slate-300">
@@ -155,14 +233,14 @@ export default function ResultsDisplay({ result, metadata, c2paData, onReset, jo
         </h3>
 
         {gradcamLoading ? (
-          <div className="flex items-center justify-center py-8">
+          <div className="flex flex-centre justify-center py-8">
             <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-indigo-400 border-r-2"></div>
           </div>
         ) : gradcamData?.heatmap_url ? (
           <img
             src={`${API_URL}${gradcamData.heatmap_url.replace('/api', '')}`}
             alt="GradCAM"
-            className="rounded-xl border border-slate-700"
+            className="w-full max-w-full object-contain mx-auto rounded-xl border border-slate-700"
           />
         ) : (
           <p className="text-slate-500 text-sm">

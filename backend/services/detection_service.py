@@ -158,13 +158,17 @@ class DetectionService:
             mesonet_avg = np.mean(mesonet_confidences) if mesonet_confidences else 0
             xception_avg = np.mean(xception_confidences) if xception_confidences else 0
             
-            # Calculate improvement over BEST single model
+            # NOTE: this compares *confidence scores* between models on this
+            # one sample, not accuracy against ground truth. A model can be
+            # confidently wrong, so this is a diagnostic signal, not a validated
+            # performance metric. Real accuracy/F1 comparisons require running
+            # evaluate.py against a labeled test set (see finetune/README.md).
             best_single_model = max(mesonet_avg, xception_avg)
             if best_single_model > 0:
-                improvement = ((ensemble_result['confidence'] - best_single_model) / best_single_model * 100)
+                confidence_delta = ((ensemble_result['confidence'] - best_single_model) / best_single_model * 100)
             else:
-                improvement = 0
-            
+                confidence_delta = 0
+
             return {
                 **ensemble_result,
                 'comparison': {
@@ -183,7 +187,11 @@ class DetectionService:
                         'prediction': ensemble_result['prediction'],
                         'confidence': float(ensemble_result['confidence'])
                     },
-                    'improvement': f"+{improvement:.1f}%" if improvement > 0 else f"{improvement:.1f}%"
+                    'confidence_delta_vs_best_single_model': (
+                        f"+{confidence_delta:.1f}%" if confidence_delta > 0 else f"{confidence_delta:.1f}%"
+                    ),
+                    'note': 'Confidence comparison only — not a validated accuracy metric until '
+                            'models are evaluated against labeled ground truth.'
                 }
             }
         
@@ -200,17 +208,21 @@ class DetectionService:
             mesonet_conf = mesonet_result.get('confidence', 0) if mesonet_result else 0
             xception_conf = xception_result.get('confidence', 0) if xception_result else 0
             
-            # Calculate improvement over BEST single model
+            # NOTE: this compares *confidence scores* between models on this
+            # one sample, not accuracy against ground truth. A model can be
+            # confidently wrong, so this is a diagnostic signal, not a validated
+            # performance metric. Real accuracy/F1 comparisons require running
+            # evaluate.py against a labeled test set (see finetune/README.md).
             best_single_model = max(mesonet_conf, xception_conf)
             if best_single_model > 0:
-                improvement = ((result['confidence'] - best_single_model) / best_single_model * 100)
+                confidence_delta = ((result['confidence'] - best_single_model) / best_single_model * 100)
             else:
-                improvement = 0
-            
+                confidence_delta = 0
+
             # Get predictions, handle None case
             mesonet_pred = mesonet_result.get('prediction', 'unavailable') if mesonet_result else 'unavailable'
             xception_pred = xception_result.get('prediction', 'unavailable') if xception_result else 'unavailable'
-            
+
             return {
                 'type': 'image',
                 'prediction': result['prediction'],
@@ -232,7 +244,11 @@ class DetectionService:
                         'prediction': result['prediction'],
                         'confidence': float(result['confidence'])
                     },
-                    'improvement': f"+{improvement:.1f}%" if improvement > 0 else f"{improvement:.1f}%"
+                    'confidence_delta_vs_best_single_model': (
+                        f"+{confidence_delta:.1f}%" if confidence_delta > 0 else f"{confidence_delta:.1f}%"
+                    ),
+                    'note': 'Confidence comparison only — not a validated accuracy metric until '
+                            'models are evaluated against labeled ground truth.'
                 }
             }
         

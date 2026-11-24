@@ -8,6 +8,8 @@ from security.security_middleware import security
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import os
+import time
+import threading
 import uuid
 from datetime import datetime
 
@@ -26,7 +28,10 @@ def add_security_headers(response):
     return security.add_security_headers(response)
 
 app.config.from_object(Config)
-CORS(app)  # Enable CORS for frontend
+
+# CORS restricted to configured origins only (see config.py CORS_ORIGINS).
+# Do not widen this to '*' outside of one-off local debugging.
+CORS(app, origins=app.config['CORS_ORIGINS'])
 
 # Ensure directories exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -40,6 +45,53 @@ print("Detection service ready")
 
 # In-memory job storage (in production, use database)
 jobs_db = {}
+
+
+def cleanup_expired_files():
+    """
+    Secure deletion: remove uploaded media and derived results (Grad-CAM
+    outputs, etc.) older than Config.FILE_RETENTION_SECONDS.
+
+    This implements the "Secure Deletion" step of the architecture (Section 3
+    of the paper) — previously uploaded files were kept indefinitely.
+    """
+    now = time.time()
+    retention = app.config['FILE_RETENTION_SECONDS']
+
+    for folder in (app.config['UPLOAD_FOLDER'], app.config['RESULTS_FOLDER']):
+        if not os.path.isdir(folder):
+            continue
+        for root, _, files in os.walk(folder):
+            for name in files:
+                path = os.path.join(root, name)
+                try:
+                    if now - os.path.getmtime(path) > retention:
+                        os.remove(path)
+                        print(f"🗑️  Deleted expired file: {path}")
+                except OSError:
+                    pass
+
+    # Drop matching job records so /api/status stops referencing deleted files
+    expired_jobs = [
+        jid for jid, job in jobs_db.items()
+        if now - datetime.fromisoformat(job['upload_time']).timestamp() > retention
+    ]
+    for jid in expired_jobs:
+        jobs_db.pop(jid, None)
+
+
+def start_cleanup_scheduler(interval_seconds=3600):
+    """Run cleanup_expired_files() on a background timer for the app's lifetime."""
+    def _loop():
+        while True:
+            time.sleep(interval_seconds)
+            try:
+                cleanup_expired_files()
+            except Exception as e:
+                print(f"⚠️ Cleanup job failed: {e}")
+
+    thread = threading.Thread(target=_loop, daemon=True)
+    thread.start()
 
 
 def allowed_file(filename):
@@ -383,6 +435,19 @@ if __name__ == '__main__':
     print(f"Version: {app.config['API_VERSION']}")
     print(f"Upload folder: {app.config['UPLOAD_FOLDER']}")
     print(f"Max file size: {app.config['MAX_CONTENT_LENGTH'] / (1024*1024):.0f}MB")
+    print(f"Debug mode: {app.config['DEBUG']}")
+    print(f"Host: {app.config['HOST']}")
+    print(f"File retention: {app.config['FILE_RETENTION_SECONDS'] / 3600:.1f}h")
     print("=" * 50)
-    
-    app.run(debug=True, host='0.0.0.0', port=5000)
+
+    if app.config['DEBUG'] and app.config['HOST'] == '0.0.0.0':
+        # Refuse to start rather than silently exposing the interactive
+        # debugger (with code execution) to the network.
+        raise RuntimeError(
+            "Refusing to start: FLASK_DEBUG=true with FLASK_HOST=0.0.0.0 would "
+            "expose the Werkzeug debugger externally. Use DEBUG only with the "
+            "default loopback host, or disable DEBUG for network-reachable runs."
+        )
+
+    start_cleanup_scheduler()
+    app.run(debug=app.config['DEBUG'], host=app.config['HOST'], port=app.config['PORT'])

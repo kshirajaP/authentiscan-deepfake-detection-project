@@ -96,55 +96,37 @@ class DeepfakeDetector:
     Ensemble Deepfake Detector
     Combines MesoNet (Keras) + XceptionNet (PyTorch)
     """
-    def __init__(self, device='cpu', use_mesonet=False):  # Set to False to disable
+    def __init__(self, device='cpu', use_mesonet=True):
         """
         Initialize with both models
-    
+
         Args:
             device: 'cpu' or 'cuda'
-            use_mesonet: Set to False if MesoNet weights are unreliable
+            use_mesonet: Set to False to disable MesoNet and run XceptionNet-only
         """
         self.device = torch.device(device)
         self.use_mesonet_flag = use_mesonet
-    
+
         print(f"🚀 Initializing Deepfake Detector on {self.device}")
-    
+
         # Get path to pretrained weights
         current_dir = Path(__file__).parent
         self.weights_dir = current_dir / "pretrained"
         self.mesonet_weights = self.weights_dir / "mesonet4.h5"
-    
+        self.xception_finetuned_weights = self.weights_dir / "xception_finetuned.pth"
+
         # Load models
         if use_mesonet:
             self.mesonet = self._load_mesonet()
         else:
             print("⚠️ MesoNet disabled (use_mesonet=False)")
             self.mesonet = None
-    
-        self.xception = self._load_xception()
-    
-        # Setup transforms
-        self._setup_transforms()
-    
-        print("✅ Detector initialized successfully")
 
-    def __init__(self, device='cpu'):
-        """Initialize with both models"""
-        self.device = torch.device(device)
-        print(f"🚀 Initializing Deepfake Detector on {self.device}")
-        
-        # Get path to pretrained weights
-        current_dir = Path(__file__).parent
-        self.weights_dir = current_dir / "pretrained"
-        self.mesonet_weights = self.weights_dir / "mesonet4.h5"
-        
-        # Load models
-        self.mesonet = self._load_mesonet()
         self.xception = self._load_xception()
-        
+
         # Setup transforms
         self._setup_transforms()
-        
+
         print("✅ Detector initialized successfully")
     
     def _load_mesonet(self):
@@ -172,14 +154,26 @@ class DeepfakeDetector:
     def _load_xception(self):
         """Load XceptionNet model"""
         print("📦 Loading XceptionNet...")
-        
+
         try:
             model = XceptionNetDeepfake(pretrained=True)
+
+            if self.xception_finetuned_weights.exists():
+                state = torch.load(self.xception_finetuned_weights, map_location=self.device)
+                model.load_state_dict(state)
+                self.xception_is_finetuned = True
+                print(f"✅ XceptionNet loaded (fine-tuned on deepfake data: {self.xception_finetuned_weights.name})")
+            else:
+                self.xception_is_finetuned = False
+                print("⚠️ XceptionNet loaded with ImageNet weights only — classifier head is UNTRAINED")
+                print("   Predictions from this branch are not yet meaningful for deepfake detection.")
+                print("   Run backend/../finetune/train_xception.py and drop the output here:")
+                print(f"   {self.xception_finetuned_weights}")
+
             model.to(self.device)
             model.eval()
-            print("✅ XceptionNet loaded (ImageNet pretrained)")
             return model
-        
+
         except Exception as e:
             print(f"❌ XceptionNet load failed: {e}")
             return None
@@ -297,11 +291,13 @@ class DeepfakeDetector:
             }
             return result
         
-        # Ensemble: Weighted average
-        # Weights based on typical model performance
+        # Ensemble: Weighted average.
+        # TODO: these are placeholder weights. Once xception_finetuned.pth exists
+        # (see finetune/train_xception.py), re-derive from each model's measured
+        # validation accuracy instead of using fixed defaults.
         mesonet_weight = 0.4
         xception_weight = 0.6
-        
+
         ensemble_fake_prob = (
             mesonet_weight * mesonet_result['fake_probability'] +
             xception_weight * xception_result['fake_probability']
@@ -321,7 +317,8 @@ class DeepfakeDetector:
             'individual_models': {
                 'mesonet': mesonet_result,
                 'xception': xception_result
-            }
+            },
+            'xception_finetuned': getattr(self, 'xception_is_finetuned', False)
         }
     
     def predict_video(self, frames):

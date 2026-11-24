@@ -13,3 +13,22 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Uploaded/derived media — user content and generated results should
+# never be committed (privacy; also contradicts the app's own
+# "secure deletion" claim if files sit in git history forever).
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/results/*
+!backend/results/.gitkeep
+
+# Fine-tuned model weights are large binaries better tracked with
+# release artifacts / LFS than committed directly.
+backend/models/pretrained/*.pth
+
+kaggle.json
+kaggle_upload/
+finetune/data/
+finetune/*.pth
+
+*.zip
